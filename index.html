@@ -287,24 +287,31 @@ async function executeTool(name,args){
 var TTS_PROXY='https://edge-tts-proxy-gamma.vercel.app/api/tts';
 
 async function edgeTTS(text){
-  // Unlock audio playback (iOS needs user gesture chain)
-  try{var _c=new(window.AudioContext||window.webkitAudioContext)();_c.resume();setTimeout(function(){_c.close()},500)}catch(e){}
   try{
     var voice=getVoice();
     var res=await fetch(TTS_PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,voice:voice})});
-    if(!res.ok)throw new Error('TTS proxy '+res.status);
+    if(!res.ok)throw new Error('TTS proxy HTTP '+res.status);
     var blob=await res.blob();
     if(blob.size<100)throw new Error('empty audio');
-    var audio=new Audio(URL.createObjectURL(blob));
+
+    // Reuse pre-unlocked audio element (created on mic tap user gesture)
+    var audio=window._fridayAudio||new Audio();
+    audio.src=URL.createObjectURL(blob);
     await new Promise(function(resolve){
-      audio.onended=resolve;
-      audio.onerror=resolve;
-      audio.play().catch(function(){resolve()});
-      setTimeout(resolve,15000);
+      audio.onended=function(){resolve()};
+      audio.onerror=function(){console.error('audio play error');resolve()};
+      audio.play().then(function(){
+        // Playing — wait for end
+      }).catch(function(e){
+        console.error('play() blocked:',e);
+        // Fallback
+        fallbackTTS(text).then(resolve);
+      });
+      // Safety timeout
+      setTimeout(resolve,Math.max(text.length*150,5000));
     });
   }catch(e){
     console.error('Edge TTS fail:',e);
-    // Fallback to SpeechSynthesis
     await fallbackTTS(text);
   }
 }
@@ -375,6 +382,11 @@ function toggleMic(){
   if(micOn){stopVoice();return}
   if(!getKey()){alert('Pehle Settings mein Groq API key daal.');showTab('settings');return}
 
+  // Pre-create audio element on user gesture — iOS won't block play() later
+  if(!window._fridayAudio){
+    window._fridayAudio=new Audio();
+    window._fridayAudio.play().catch(function(){}); // unlock
+  }
   micOn=true;wakeDetected=false;pendingCmd='';conversationMode=false;
   document.getElementById('mic').className='on';document.getElementById('mic').textContent='🟢';
   showOv('listening');
@@ -392,15 +404,17 @@ function stopVoice(){
 function listenOnce(){
   if(!SR||!micOn)return;
   var rec=new SR();rec.continuous=false;rec.interimResults=true;rec.lang='en-US';
+  var dispatched=false;
   rec.onresult=function(e){
+    if(dispatched)return;
     var text='',fin=false;
     for(var i=0;i<e.results.length;i++){text+=e.results[i][0].transcript;if(e.results[i].isFinal)fin=true}
     var lower=text.toLowerCase().trim();
 
-    // Conversation mode — seedha command le, wake word nahi chahiye
+    // Conversation mode — seedha command
     if(conversationMode){
-      pendingCmd=lower;
-      if(fin&&lower.length>1){processCmd(lower)}
+      if(fin&&lower.length>1){dispatched=true;processCmd(lower)}
+      else{pendingCmd=lower}
       return;
     }
 
@@ -408,23 +422,18 @@ function listenOnce(){
     if(lower.indexOf('friday')>=0){
       var cmd=lower.slice(lower.indexOf('friday')+6).trim();
       if(cmd.length>1&&fin){
-        // "Friday do something" — pura command ek mein aaya
-        processCmd(cmd);
+        dispatched=true;processCmd(cmd);
       }else{
-        // Sirf "Friday" bola — command sunne ke liye alag session
         wakeDetected=true;showOv('active');
         try{rec.stop()}catch(ex){}
       }
     }
   };
   rec.onend=function(){
-    if(!micOn)return;
-    // Wake detected, command session start karo (800ms delay — Safari ko time do)
+    if(dispatched||!micOn)return;
     if(wakeDetected){setTimeout(listenForCommand,800);return}
-    // Conversation mode pending
-    if(conversationMode&&pendingCmd.length>0){processCmd(pendingCmd);return}
+    if(conversationMode&&pendingCmd.length>0){dispatched=true;processCmd(pendingCmd);return}
     if(conversationMode){setTimeout(listenOnce,500);return}
-    // Normal restart — wake word sun
     setTimeout(listenOnce,1500);
   };
   rec.onerror=function(){};
@@ -436,16 +445,19 @@ function listenForCommand(){
   if(!SR||!micOn){wakeDetected=false;showOv('listening');return}
   var rec=new SR();rec.continuous=false;rec.interimResults=true;rec.lang='en-US';
   var captured='';
+  var dispatched=false; // double-fire guard
   rec.onresult=function(e){
     var text='',fin=false;
     for(var i=0;i<e.results.length;i++){text+=e.results[i][0].transcript;if(e.results[i].isFinal)fin=true}
     captured=text.toLowerCase().trim();
-    if(fin&&captured.length>1){try{rec.stop()}catch(ex){};processCmd(captured)}
+    // Sirf final pe dispatch, ek baar
+    if(fin&&captured.length>1&&!dispatched){dispatched=true;try{rec.stop()}catch(ex){};processCmd(captured)}
   };
   rec.onend=function(){
+    if(dispatched)return; // already processed
     if(!micOn){wakeDetected=false;return}
-    if(captured.length>1){processCmd(captured);return}
-    // Command nahi mila — wapas yellow (wake word mode)
+    if(captured.length>1){dispatched=true;processCmd(captured);return}
+    // Command nahi mila — wapas yellow
     wakeDetected=false;showOv('listening');
     setTimeout(listenOnce,1000);
   };
@@ -465,20 +477,34 @@ function startConversationMode(){
 }
 
 // ─── Command Pipeline ───
+var _processing=false;
 async function processCmd(text){
+  if(_processing)return; // guard against double calls
+  _processing=true;
   wakeDetected=false;pendingCmd='';conversationMode=false;
   if(convoTimer)clearTimeout(convoTimer);
-  showOv('thinking');
-  addBubble('user',text);
 
-  var result=await callGroq(text);
-  var reply=result.reply||"Couldn't process that.";
+  try{
+    showOv('thinking');
+    addBubble('user',text);
 
-  addBubble('fri',reply);
-  showOv('speaking');
-  await edgeTTS(reply);
+    var result=await callGroq(text);
+    var reply=result.reply||"Couldn't process that.";
 
-  render();
+    addBubble('fri',reply);
+    showOv('speaking');
+
+    // TTS — try Edge, fallback to SpeechSynthesis
+    try{await edgeTTS(reply)}catch(e){console.error('TTS fail:',e)}
+
+    render();
+  }catch(err){
+    console.error('processCmd error:',err);
+    addBubble('fri','Error: '+err.message);
+  }
+
+  // ALWAYS resume listening
+  _processing=false;
   if(micOn){
     startConversationMode();
     showOv('listening');

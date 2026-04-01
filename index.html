@@ -368,17 +368,34 @@ function escXml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/
 // ─── Voice Engine (STT) ───
 var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 var micOn=false,wakeDetected=false,pendingCmd='';
+var conversationMode=false; // response ke baad 10s tak wake word skip
+var convoTimer=null;
+var ttsUnlocked=false;
 
 function toggleMic(){
   if(micOn){stopVoice();return}
   if(!getKey()){alert('Pehle Settings mein Groq API key daal.');showTab('settings');return}
-  micOn=true;wakeDetected=false;pendingCmd='';
+
+  // TTS unlock on user gesture — iOS Safari requires this
+  if(!ttsUnlocked){
+    ttsUnlocked=true;
+    if(window.speechSynthesis){
+      var dummy=new SpeechSynthesisUtterance('');
+      dummy.volume=0;
+      speechSynthesis.speak(dummy);
+    }
+    // AudioContext bhi unlock karo (Edge TTS playback ke liye)
+    try{var ctx=new(window.AudioContext||window.webkitAudioContext)();ctx.resume();setTimeout(function(){ctx.close()},100)}catch(e){}
+  }
+
+  micOn=true;wakeDetected=false;pendingCmd='';conversationMode=false;
   document.getElementById('mic').className='on';document.getElementById('mic').textContent='🟢';
   showOv('listening');
   listenOnce();
 }
 function stopVoice(){
-  micOn=false;wakeDetected=false;
+  micOn=false;wakeDetected=false;conversationMode=false;
+  if(convoTimer)clearTimeout(convoTimer);
   document.getElementById('mic').className='';document.getElementById('mic').textContent='🎤';
   hideOv();
 }
@@ -389,30 +406,50 @@ function listenOnce(){
     var text='',fin=false;
     for(var i=0;i<e.results.length;i++){text+=e.results[i][0].transcript;if(e.results[i].isFinal)fin=true}
     var lower=text.toLowerCase().trim();
-    // Live transcript — status mein dikhao, clearly visible
     document.getElementById('ov-status').textContent='"'+text+'"';
-    if(!wakeDetected){
+
+    if(conversationMode){
+      // Conversation mode — wake word ki zarurat nahi
+      pendingCmd=lower;
+      if(fin&&pendingCmd.length>1){processCmd(pendingCmd);return}
+    }else if(!wakeDetected){
       if(lower.indexOf('friday')>=0){
         wakeDetected=true;showOv('active');
         var cmd=lower.slice(lower.indexOf('friday')+6).trim();
         if(cmd.length>1&&fin){processCmd(cmd);return}
         pendingCmd=cmd;
       }
-    }else{pendingCmd=lower}
+    }else{
+      pendingCmd=lower;
+    }
   };
   rec.onend=function(){
     if(!micOn)return;
-    if(wakeDetected&&pendingCmd.length>0){processCmd(pendingCmd);return}
-    if(wakeDetected){setTimeout(listenOnce,300);return}
-    setTimeout(listenOnce,1000);
+    if(pendingCmd.length>0&&(wakeDetected||conversationMode)){processCmd(pendingCmd);return}
+    if(wakeDetected||conversationMode){setTimeout(listenOnce,300);return}
+    // Normal wake word listening — 1.5s delay (Safari needs breathing room)
+    setTimeout(listenOnce,1500);
   };
   rec.onerror=function(e){if(e.error!=='aborted'&&e.error!=='no-speech')console.error('STT:',e.error)};
-  try{rec.start()}catch(ex){if(micOn)setTimeout(listenOnce,1000)}
+  try{rec.start()}catch(ex){if(micOn)setTimeout(listenOnce,1500)}
+}
+
+function startConversationMode(){
+  conversationMode=true;
+  wakeDetected=false;
+  pendingCmd='';
+  if(convoTimer)clearTimeout(convoTimer);
+  // 10 sec — uske baad wapas wake word mode
+  convoTimer=setTimeout(function(){
+    conversationMode=false;
+    if(micOn)document.getElementById('ov-hint').textContent='Say "Friday" to continue';
+  },10000);
 }
 
 // ─── Command Pipeline ───
 async function processCmd(text){
-  wakeDetected=false;pendingCmd='';
+  wakeDetected=false;pendingCmd='';conversationMode=false;
+  if(convoTimer)clearTimeout(convoTimer);
   showOv('thinking');
   addBubble('user',text);
 
@@ -424,7 +461,13 @@ async function processCmd(text){
   await edgeTTS(reply);
 
   render();
-  if(micOn){showOv('listening');setTimeout(listenOnce,1000)}
+  if(micOn){
+    // Conversation mode — 10s tak bina wake word bolo
+    startConversationMode();
+    showOv('listening');
+    document.getElementById('ov-hint').textContent='Listening... (no wake word needed for 10s)';
+    setTimeout(listenOnce,1500);
+  }
 }
 
 // ─── Overlay ───

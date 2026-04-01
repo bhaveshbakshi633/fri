@@ -389,8 +389,8 @@ function listenOnce(){
     var text='',fin=false;
     for(var i=0;i<e.results.length;i++){text+=e.results[i][0].transcript;if(e.results[i].isFinal)fin=true}
     var lower=text.toLowerCase().trim();
-    // Live transcript sirf ov-hint mein dikhao (subtle)
-    document.getElementById('ov-hint').textContent=text;
+    // Live transcript — status mein dikhao, clearly visible
+    document.getElementById('ov-status').textContent='"'+text+'"';
     if(!wakeDetected){
       if(lower.indexOf('friday')>=0){
         wakeDetected=true;showOv('active');

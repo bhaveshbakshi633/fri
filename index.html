@@ -340,7 +340,9 @@ function stopVoice(){
   hideOv();
 }
 function listenOnce(){
-  if(!SR||!micOn)return;
+  if(!SR){document.getElementById('ov-hint').textContent='ERROR: No SpeechRecognition';return}
+  if(!micOn){document.getElementById('ov-hint').textContent='ERROR: micOn is false';return}
+  document.getElementById('ov-hint').textContent='Starting recognition...';
   var rec=new SR();rec.continuous=false;rec.interimResults=true;rec.lang='en-US';
   rec.onresult=function(e){
     var text='',fin=false;
@@ -370,8 +372,9 @@ function listenOnce(){
     // Normal wake word listening — 1.5s delay (Safari needs breathing room)
     setTimeout(listenOnce,1500);
   };
-  rec.onerror=function(e){if(e.error!=='aborted'&&e.error!=='no-speech')console.error('STT:',e.error)};
-  try{rec.start()}catch(ex){if(micOn)setTimeout(listenOnce,1500)}
+  rec.onerror=function(e){document.getElementById('ov-hint').textContent='ERR:'+e.error;if(e.error!=='aborted'&&e.error!=='no-speech')console.error('STT:',e.error)};
+  rec.onstart=function(){document.getElementById('ov-hint').textContent='Mic active - speak now'};
+  try{rec.start();document.getElementById('ov-hint').textContent='rec.start() called'}catch(ex){document.getElementById('ov-hint').textContent='START FAIL:'+ex.message;if(micOn)setTimeout(listenOnce,1500)}
 }
 
 function startConversationMode(){

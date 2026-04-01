@@ -109,11 +109,25 @@ h1{font-size:26px;font-weight:700;margin-bottom:16px}
 <div id="ov-chat"></div>
 <p id="ov-hint">Say "Friday" to start</p>
 <button id="ov-stop" onclick="stopVoice()">✕</button>
+<div id="dlog" style="position:absolute;bottom:50px;left:8px;right:8px;max-height:28vh;overflow-y:auto;background:rgba(0,0,0,.9);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:8px;font-family:monospace;font-size:11px;line-height:1.5;text-align:left"></div>
 </div>
 </div>
 </div>
 
 <script>
+// ─── Diagnostic Logger ───
+function L(msg,color){
+  var el=document.getElementById('dlog');if(!el)return;
+  var t=new Date().toLocaleTimeString();
+  var d=document.createElement('div');
+  d.style.color=color||'#888';
+  d.textContent=t+' '+msg;
+  el.appendChild(d);
+  el.scrollTop=el.scrollHeight;
+  // Max 30 lines
+  while(el.children.length>30)el.removeChild(el.firstChild);
+  console.log('[F]',msg);
+}
 // ─── Nuke old SW ───
 if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(x){x.unregister()})});if(window.caches)caches.keys().then(function(k){k.forEach(function(x){caches.delete(x)})})}
 
@@ -390,7 +404,8 @@ function toggleMic(){
   micOn=true;wakeDetected=false;pendingCmd='';conversationMode=false;
   document.getElementById('mic').className='on';document.getElementById('mic').textContent='🟢';
   showOv('listening');
-  startMicMonitor(); // audio level visualizer
+  L('MIC ON — starting','#0f0');
+  startMicMonitor();
   listenOnce();
 }
 function stopVoice(){
@@ -402,67 +417,74 @@ function stopVoice(){
 }
 // Wake word detection — continuous=false, restart loop
 function listenOnce(){
-  if(!SR||!micOn)return;
+  if(!SR||!micOn){L('listenOnce skip: SR='+!!SR+' micOn='+micOn,'#f66');return}
   var rec=new SR();rec.continuous=false;rec.interimResults=true;rec.lang='en-US';
   var dispatched=false;
+  L('STT session starting...','#ff0');
+  rec.onstart=function(){L('STT active — speak now','#0f0')};
   rec.onresult=function(e){
     if(dispatched)return;
     var text='',fin=false;
     for(var i=0;i<e.results.length;i++){text+=e.results[i][0].transcript;if(e.results[i].isFinal)fin=true}
     var lower=text.toLowerCase().trim();
+    L((fin?'FINAL':'interim')+': "'+lower+'"','#0ff');
 
-    // Conversation mode — seedha command
     if(conversationMode){
-      if(fin&&lower.length>1){dispatched=true;processCmd(lower)}
+      if(fin&&lower.length>1){dispatched=true;L('CONVO CMD: '+lower,'#f0f');processCmd(lower)}
       else{pendingCmd=lower}
       return;
     }
 
-    // Wake word check
     if(lower.indexOf('friday')>=0){
       var cmd=lower.slice(lower.indexOf('friday')+6).trim();
       if(cmd.length>1&&fin){
-        dispatched=true;processCmd(cmd);
+        dispatched=true;L('WAKE+CMD: '+cmd,'#0f0');processCmd(cmd);
       }else{
         wakeDetected=true;showOv('active');
+        L('WAKE WORD — waiting for command','#0f0');
         try{rec.stop()}catch(ex){}
       }
     }
   };
   rec.onend=function(){
+    L('STT ended dispatched='+dispatched+' wake='+wakeDetected+' convo='+conversationMode,'#888');
     if(dispatched||!micOn)return;
-    if(wakeDetected){setTimeout(listenForCommand,800);return}
+    if(wakeDetected){L('Starting command session (800ms)','#ff0');setTimeout(listenForCommand,800);return}
     if(conversationMode&&pendingCmd.length>0){dispatched=true;processCmd(pendingCmd);return}
     if(conversationMode){setTimeout(listenOnce,500);return}
+    L('Restart wake listener (1.5s)','#888');
     setTimeout(listenOnce,1500);
   };
-  rec.onerror=function(){};
-  try{rec.start()}catch(ex){if(micOn)setTimeout(listenOnce,1500)}
+  rec.onerror=function(e){L('STT error: '+e.error,'#f66')};
+  try{rec.start()}catch(ex){L('STT start FAIL: '+ex.message,'#f00');if(micOn)setTimeout(listenOnce,1500)}
 }
 
-// Command capture — wake word ke baad, command suno
+// Command capture — wake word ke baad
 function listenForCommand(){
-  if(!SR||!micOn){wakeDetected=false;showOv('listening');return}
+  if(!SR||!micOn){L('cmdListen skip','#f66');wakeDetected=false;showOv('listening');return}
+  L('CMD session starting...','#0f0');
   var rec=new SR();rec.continuous=false;rec.interimResults=true;rec.lang='en-US';
   var captured='';
-  var dispatched=false; // double-fire guard
+  var dispatched=false;
+  rec.onstart=function(){L('CMD active — speak command','#0f0')};
   rec.onresult=function(e){
     var text='',fin=false;
     for(var i=0;i<e.results.length;i++){text+=e.results[i][0].transcript;if(e.results[i].isFinal)fin=true}
     captured=text.toLowerCase().trim();
-    // Sirf final pe dispatch, ek baar
-    if(fin&&captured.length>1&&!dispatched){dispatched=true;try{rec.stop()}catch(ex){};processCmd(captured)}
+    L((fin?'CMD FINAL':'cmd interim')+': "'+captured+'"','#0ff');
+    if(fin&&captured.length>1&&!dispatched){dispatched=true;L('DISPATCH CMD: '+captured,'#f0f');try{rec.stop()}catch(ex){};processCmd(captured)}
   };
   rec.onend=function(){
-    if(dispatched)return; // already processed
+    L('CMD ended dispatched='+dispatched+' captured="'+captured+'"','#888');
+    if(dispatched)return;
     if(!micOn){wakeDetected=false;return}
     if(captured.length>1){dispatched=true;processCmd(captured);return}
-    // Command nahi mila — wapas yellow
+    L('No command — back to wake word','#ff0');
     wakeDetected=false;showOv('listening');
     setTimeout(listenOnce,1000);
   };
-  rec.onerror=function(){};
-  try{rec.start()}catch(ex){wakeDetected=false;showOv('listening');if(micOn)setTimeout(listenOnce,1500)}
+  rec.onerror=function(e){L('CMD error: '+e.error,'#f66')};
+  try{rec.start()}catch(ex){L('CMD start FAIL: '+ex.message,'#f00');wakeDetected=false;showOv('listening');if(micOn)setTimeout(listenOnce,1500)}
 }
 
 function startConversationMode(){
@@ -487,28 +509,33 @@ async function processCmd(text){
   try{
     showOv('thinking');
     addBubble('user',text);
+    L('Calling Groq...','#a78bfa');
 
     var result=await callGroq(text);
     var reply=result.reply||"Couldn't process that.";
+    L('Groq reply: '+reply.slice(0,60),'#a78bfa');
+    if(result.toolCalls&&result.toolCalls.length)L('Tools used: '+result.toolCalls.map(function(t){return t.function.name}).join(', '),'#f0f');
 
     addBubble('fri',reply);
     showOv('speaking');
+    L('TTS starting...','#f66');
 
-    // TTS — try Edge, fallback to SpeechSynthesis
-    try{await edgeTTS(reply)}catch(e){console.error('TTS fail:',e)}
+    try{await edgeTTS(reply);L('TTS done','#0f0')}catch(e){L('TTS FAIL: '+e.message,'#f00')}
 
     render();
   }catch(err){
-    console.error('processCmd error:',err);
+    L('processCmd ERROR: '+err.message,'#f00');
     addBubble('fri','Error: '+err.message);
   }
 
-  // ALWAYS resume listening
   _processing=false;
   if(micOn){
+    L('Resuming — conversation mode 10s','#ff0');
     startConversationMode();
     showOv('listening');
     setTimeout(listenOnce,1500);
+  }else{
+    L('micOn=false, not resuming','#f66');
   }
 }
 

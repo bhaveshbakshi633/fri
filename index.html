@@ -61,14 +61,21 @@ h1{font-size:26px;font-weight:700;margin-bottom:16px}
 #ov.on{display:flex}
 #ov .bg{position:absolute;inset:0;background:rgba(5,5,15,.94);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px)}
 #ov .in{position:relative;display:flex;flex-direction:column;align-items:center;gap:16px;padding:40px 24px;width:100%}
-#ov-status{font-size:20px;font-weight:600;letter-spacing:.3px}
-#ov-orb{width:140px;height:140px;border-radius:50%;background:radial-gradient(circle at 40% 40%,var(--accent),#7c3aed,#4f46e5);animation:breathe 2.5s ease-in-out infinite;box-shadow:0 0 60px rgba(99,102,241,.3)}
-@keyframes breathe{0%,100%{transform:scale(1);opacity:.8}50%{transform:scale(1.06);opacity:1}}
-#ov.thinking #ov-orb{animation:think .8s ease-in-out infinite;background:radial-gradient(circle,#7c3aed,#6d28d9)}
-@keyframes think{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
-#ov.speaking #ov-orb{background:radial-gradient(circle,var(--green),#059669);animation:speak 1.2s ease-in-out infinite}
-@keyframes speak{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
-#ov-hint{font-size:11px;color:var(--muted);margin-top:8px}
+#ov-status{display:none}
+#ov-orb{width:160px;height:160px;border-radius:50%;transition:background .5s,box-shadow .5s;animation:breathe 2.5s ease-in-out infinite}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.06);opacity:1}}
+/* Yellow — waiting for wake word */
+#ov.listening #ov-orb{background:radial-gradient(circle at 40% 40%,#fbbf24,#f59e0b,#d97706);box-shadow:0 0 60px rgba(251,191,36,.4)}
+/* Green — wake word detected, listening for command */
+#ov.active #ov-orb{background:radial-gradient(circle at 40% 40%,#34d399,#10b981,#059669);box-shadow:0 0 60px rgba(16,185,129,.5);animation:pulse-green .8s ease-in-out infinite}
+@keyframes pulse-green{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+/* Purple — thinking */
+#ov.thinking #ov-orb{background:radial-gradient(circle,#a78bfa,#7c3aed,#6d28d9);box-shadow:0 0 60px rgba(124,58,237,.5);animation:think .6s ease-in-out infinite}
+@keyframes think{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+/* Red — speaking/outputting */
+#ov.speaking #ov-orb{background:radial-gradient(circle at 40% 40%,#f87171,#ef4444,#dc2626);box-shadow:0 0 60px rgba(239,68,68,.5);animation:speak-pulse 1s ease-in-out infinite}
+@keyframes speak-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+#ov-hint{display:none}
 #ov-stop{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.08);border:none;color:var(--dim);font-size:18px;cursor:pointer;margin-top:16px}
 
 /* Conversation bubbles in overlay */
@@ -328,6 +335,12 @@ function toggleMic(){
   if(micOn){stopVoice();return}
   if(!getKey()){alert('Pehle Settings mein Groq API key daal.');showTab('settings');return}
 
+  // iOS audio unlock — silent play on first user gesture
+  if(!window._audioUnlocked){
+    window._audioUnlocked=true;
+    var a=new Audio();a.src='data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYoRwMHAAAAAAD/+1DEAAIFAAJX0AAAIwKgSrgwAABNm5ub/BgIAmD5//BwEHf/y4PnH5//+X/+D5//y4f///l//g+f/8uH//8AAAAN';
+    a.volume=0.01;a.play().catch(function(){});
+  }
   micOn=true;wakeDetected=false;pendingCmd='';conversationMode=false;
   document.getElementById('mic').className='on';document.getElementById('mic').textContent='🟢';
   showOv('listening');
@@ -340,16 +353,12 @@ function stopVoice(){
   hideOv();
 }
 function listenOnce(){
-  if(!SR){document.getElementById('ov-hint').textContent='ERROR: No SpeechRecognition';return}
-  if(!micOn){document.getElementById('ov-hint').textContent='ERROR: micOn is false';return}
-  document.getElementById('ov-hint').textContent='Starting recognition...';
+  if(!SR||!micOn)return;
   var rec=new SR();rec.continuous=false;rec.interimResults=true;rec.lang='en-US';
   rec.onresult=function(e){
     var text='',fin=false;
     for(var i=0;i<e.results.length;i++){text+=e.results[i][0].transcript;if(e.results[i].isFinal)fin=true}
     var lower=text.toLowerCase().trim();
-    document.getElementById('ov-status').textContent='"'+text+'"';
-
     if(conversationMode){
       // Conversation mode — wake word ki zarurat nahi
       pendingCmd=lower;
@@ -372,9 +381,8 @@ function listenOnce(){
     // Normal wake word listening — 1.5s delay (Safari needs breathing room)
     setTimeout(listenOnce,1500);
   };
-  rec.onerror=function(e){document.getElementById('ov-hint').textContent='ERR:'+e.error;if(e.error!=='aborted'&&e.error!=='no-speech')console.error('STT:',e.error)};
-  rec.onstart=function(){document.getElementById('ov-hint').textContent='Mic active - speak now'};
-  try{rec.start();document.getElementById('ov-hint').textContent='rec.start() called'}catch(ex){document.getElementById('ov-hint').textContent='START FAIL:'+ex.message;if(micOn)setTimeout(listenOnce,1500)}
+  rec.onerror=function(e){if(e.error!=='aborted'&&e.error!=='no-speech')console.error('STT:',e.error)};
+  try{rec.start()}catch(ex){if(micOn)setTimeout(listenOnce,1500)}
 }
 
 function startConversationMode(){
@@ -385,7 +393,6 @@ function startConversationMode(){
   // 10 sec — uske baad wapas wake word mode
   convoTimer=setTimeout(function(){
     conversationMode=false;
-    if(micOn)document.getElementById('ov-hint').textContent='Say "Friday" to continue';
   },10000);
 }
 
@@ -405,21 +412,15 @@ async function processCmd(text){
 
   render();
   if(micOn){
-    // Conversation mode — 10s tak bina wake word bolo
     startConversationMode();
     showOv('listening');
-    document.getElementById('ov-hint').textContent='Listening... (no wake word needed for 10s)';
     setTimeout(listenOnce,1500);
   }
 }
 
 // ─── Overlay ───
-function showOv(state,text,resp){
-  var o=document.getElementById('ov');o.className='on'+(state?' '+state:'');
-  var cfg={listening:{s:'Listening...',h:'Say "Friday" to start'},active:{s:'Go ahead...',h:''},thinking:{s:'Thinking...',h:''},speaking:{s:'Friday',h:''}};
-  var c=cfg[state]||cfg.listening;
-  document.getElementById('ov-status').textContent=c.s;
-  document.getElementById('ov-hint').textContent=c.h;
+function showOv(state){
+  document.getElementById('ov').className='on'+(state?' '+state:'');
 }
 function hideOv(){document.getElementById('ov').className='';document.getElementById('ov-chat').innerHTML=''}
 function addBubble(who,text){

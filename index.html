@@ -276,94 +276,46 @@ async function executeTool(name,args){
   }
 }
 
-// ─── Edge TTS ───
+// ─── Edge TTS via Vercel Proxy ───
+var TTS_PROXY='https://edge-tts-proxy-gamma.vercel.app/api/tts';
+
 async function edgeTTS(text){
-  return new Promise(function(resolve,reject){
-    var TOKEN='6A5AA1D4EAFF4E9FB37E23D68491D6F4';
+  try{
     var voice=getVoice();
-    var id=crypto.randomUUID().replace(/-/g,'');
-    var url='wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken='+TOKEN+'&ConnectionId='+id;
-
-    var ws,chunks=[],resolved=false;
-    try{ws=new WebSocket(url)}catch(e){console.log('Edge TTS WebSocket fail, using fallback');fallbackTTS(text).then(resolve);return}
-
-    ws.onopen=function(){
-      ws.send('Content-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}');
-      var ssml='<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US"><voice name="'+voice+'">'+escXml(text)+'</voice></speak>';
-      ws.send('X-RequestId:'+id+'\r\nContent-Type:application/ssml+xml\r\nPath:ssml\r\n\r\n'+ssml);
-    };
-
-    ws.onmessage=function(e){
-      if(typeof e.data==='string'){
-        if(e.data.indexOf('Path:turn.end')>=0&&!resolved){resolved=true;ws.close();playAudio(chunks).then(resolve)}
-      }else{
-        // Binary — audio data, skip header
-        e.data.arrayBuffer().then(function(buf){
-          var arr=new Uint8Array(buf);
-          var headerEnd=findHeaderEnd(arr);
-          if(headerEnd>0)chunks.push(arr.slice(headerEnd));
-        });
-      }
-    };
-
-    ws.onerror=function(e){console.log('Edge TTS ws error',e);if(!resolved){resolved=true;fallbackTTS(text).then(resolve)}};
-    ws.onclose=function(){if(!resolved){resolved=true;if(chunks.length){console.log('Edge TTS: '+chunks.length+' chunks');playAudio(chunks).then(resolve)}else{console.log('Edge TTS: no chunks, fallback');fallbackTTS(text).then(resolve)}}};
-
-    setTimeout(function(){if(!resolved){resolved=true;try{ws.close()}catch(e){};console.log('Edge TTS timeout');fallbackTTS(text).then(resolve)}},8000);
-  });
-}
-
-function findHeaderEnd(arr){
-  // Edge TTS binary frames: 2-byte big-endian header length prefix, then header text, then audio
-  // Format: [len_hi][len_lo][...header text...][audio data]
-  if(arr.length<4)return 0;
-  var hlen=(arr[0]<<8)|arr[1];
-  if(hlen>0&&hlen+2<arr.length)return hlen+2;
-  // Fallback: scan for double CRLF
-  for(var i=0;i<Math.min(arr.length-3,500);i++){
-    if(arr[i]===0x0D&&arr[i+1]===0x0A&&arr[i+2]===0x0D&&arr[i+3]===0x0A)return i+4;
-  }
-  return 0;
-}
-
-function playAudio(chunks){
-  return new Promise(function(resolve){
-    if(!chunks.length){resolve();return}
-    var blob=new Blob(chunks,{type:'audio/mp3'});
+    var res=await fetch(TTS_PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,voice:voice})});
+    if(!res.ok)throw new Error('TTS proxy '+res.status);
+    var blob=await res.blob();
+    if(blob.size<100)throw new Error('empty audio');
     var audio=new Audio(URL.createObjectURL(blob));
-    audio.onended=resolve;
-    audio.onerror=resolve;
-    audio.play().catch(function(){resolve()});
-    setTimeout(resolve,15000);
-  });
+    await new Promise(function(resolve){
+      audio.onended=resolve;
+      audio.onerror=resolve;
+      audio.play().catch(function(){resolve()});
+      setTimeout(resolve,15000);
+    });
+  }catch(e){
+    console.error('Edge TTS fail:',e);
+    // Fallback to SpeechSynthesis
+    await fallbackTTS(text);
+  }
 }
 
 function fallbackTTS(text){
   return new Promise(function(resolve){
     if(!window.speechSynthesis){resolve();return}
-    // Safari fix: cancel any pending speech first
     speechSynthesis.cancel();
     var u=new SpeechSynthesisUtterance(text);
-    u.lang='en-US';
-    u.rate=1.0;
-    u.pitch=1.0;
-    // Try to pick best voice
+    u.lang='en-US';u.rate=1.0;
     var voices=speechSynthesis.getVoices();
     var pick=voices.find(function(v){return v.name.indexOf('Samantha')>=0})
       ||voices.find(function(v){return v.lang==='en-US'&&v.localService})
       ||voices.find(function(v){return v.lang.indexOf('en')===0});
     if(pick)u.voice=pick;
-    u.onend=function(){resolve()};
-    u.onerror=function(){resolve()};
-    // Safari bug: speak() needs to happen in same tick, and sometimes onend never fires
+    u.onend=resolve;u.onerror=resolve;
     speechSynthesis.speak(u);
-    // Fallback timeout
-    var maxWait=Math.max(text.length*100+2000,5000);
-    setTimeout(resolve,maxWait);
+    setTimeout(resolve,Math.max(text.length*100+2000,5000));
   });
 }
-
-function escXml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 
 // ─── Voice Engine (STT) ───
 var SR=window.SpeechRecognition||window.webkitSpeechRecognition;

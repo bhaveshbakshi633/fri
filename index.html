@@ -287,6 +287,8 @@ async function executeTool(name,args){
 var TTS_PROXY='https://edge-tts-proxy-gamma.vercel.app/api/tts';
 
 async function edgeTTS(text){
+  // Unlock audio playback (iOS needs user gesture chain)
+  try{var _c=new(window.AudioContext||window.webkitAudioContext)();_c.resume();setTimeout(function(){_c.close()},500)}catch(e){}
   try{
     var voice=getVoice();
     var res=await fetch(TTS_PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,voice:voice})});
@@ -335,12 +337,6 @@ function toggleMic(){
   if(micOn){stopVoice();return}
   if(!getKey()){alert('Pehle Settings mein Groq API key daal.');showTab('settings');return}
 
-  // iOS audio unlock — silent play on first user gesture
-  if(!window._audioUnlocked){
-    window._audioUnlocked=true;
-    var a=new Audio();a.src='data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYoRwMHAAAAAAD/+1DEAAIFAAJX0AAAIwKgSrgwAABNm5ub/BgIAmD5//BwEHf/y4PnH5//+X/+D5//y4f///l//g+f/8uH//8AAAAN';
-    a.volume=0.01;a.play().catch(function(){});
-  }
   micOn=true;wakeDetected=false;pendingCmd='';conversationMode=false;
   document.getElementById('mic').className='on';document.getElementById('mic').textContent='🟢';
   showOv('listening');
@@ -380,6 +376,11 @@ function listenOnce(){
     if(wakeDetected||conversationMode){setTimeout(listenOnce,300);return}
     // Normal wake word listening — 1.5s delay (Safari needs breathing room)
     setTimeout(listenOnce,1500);
+  };
+  rec.onstart=function(){
+    // Quick white flash on orb — shows recognition is alive
+    var orb=document.getElementById('ov-orb');
+    if(orb){orb.style.border='3px solid white';setTimeout(function(){orb.style.border='none'},300)}
   };
   rec.onerror=function(e){if(e.error!=='aborted'&&e.error!=='no-speech')console.error('STT:',e.error)};
   try{rec.start()}catch(ex){if(micOn)setTimeout(listenOnce,1500)}

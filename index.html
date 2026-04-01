@@ -326,6 +326,44 @@ function fallbackTTS(text){
   });
 }
 
+// ─── Mic Level Monitor (visual feedback) ───
+var _micCtx=null,_micStream=null,_micAnim=null;
+function startMicMonitor(){
+  stopMicMonitor();
+  navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+    _micStream=stream;
+    _micCtx=new(window.AudioContext||window.webkitAudioContext)();
+    var src=_micCtx.createMediaStreamSource(stream);
+    var analyser=_micCtx.createAnalyser();
+    analyser.fftSize=256;
+    src.connect(analyser);
+    var data=new Uint8Array(analyser.frequencyBinCount);
+    function tick(){
+      if(!_micCtx)return;
+      analyser.getByteFrequencyData(data);
+      // Average volume 0-255
+      var sum=0;for(var i=0;i<data.length;i++)sum+=data[i];
+      var vol=sum/data.length;
+      var orb=document.getElementById('ov-orb');
+      if(orb){
+        // Orb border grows with volume — white ring
+        var ring=Math.min(vol/50,1);
+        orb.style.boxShadow='0 0 '+(20+ring*60)+'px '+(10+ring*30)+'px rgba(255,255,255,'+(ring*0.3).toFixed(2)+'), '+orb.style.boxShadow.split(',').slice(-1)[0];
+        orb.style.transform='scale('+(1+ring*0.15).toFixed(3)+')';
+      }
+      _micAnim=requestAnimationFrame(tick);
+    }
+    tick();
+  }).catch(function(e){console.error('Mic monitor fail:',e)});
+}
+function stopMicMonitor(){
+  if(_micAnim)cancelAnimationFrame(_micAnim);_micAnim=null;
+  if(_micCtx){try{_micCtx.close()}catch(e){}}_micCtx=null;
+  if(_micStream){_micStream.getTracks().forEach(function(t){t.stop()})}_micStream=null;
+  var orb=document.getElementById('ov-orb');
+  if(orb){orb.style.transform='';orb.style.boxShadow=''}
+}
+
 // ─── Voice Engine (STT) ───
 var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 var micOn=false,wakeDetected=false,pendingCmd='';
@@ -340,11 +378,13 @@ function toggleMic(){
   micOn=true;wakeDetected=false;pendingCmd='';conversationMode=false;
   document.getElementById('mic').className='on';document.getElementById('mic').textContent='🟢';
   showOv('listening');
+  startMicMonitor(); // audio level visualizer
   listenOnce();
 }
 function stopVoice(){
   micOn=false;wakeDetected=false;conversationMode=false;
   if(convoTimer)clearTimeout(convoTimer);
+  stopMicMonitor();
   document.getElementById('mic').className='';document.getElementById('mic').textContent='🎤';
   hideOv();
 }

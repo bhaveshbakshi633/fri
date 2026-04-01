@@ -191,7 +191,7 @@ var TOOLS=[
   {type:'function',function:{name:'list_reminders',description:'Show upcoming reminders',parameters:{type:'object',properties:{}}}}
 ];
 
-var SYSTEM_MSG={role:'system',content:"You are Friday, a personal AI assistant built by Bhavesh. You're sharp, witty, concise, and warm. Speak naturally in 1-2 short sentences — you're being spoken aloud via TTS. No markdown, no bullet points, no emojis. Use tools silently when the conversation implies an action. Don't announce tool usage unless it adds value — just do it and respond naturally. You know Bhavesh is a robotics engineer who values efficiency."};
+var SYSTEM_MSG={role:'system',content:"You are Friday, Bhavesh's personal AI assistant. You are an intelligent being, not a command parser.\n\nYour personality: Sharp, witty, warm, concise. Talk like a smart friend. Light humor OK. Never robotic or formal.\n\nBhavesh: Robotics engineer, AI builder. Values efficiency, hates unnecessary steps.\n\nCRITICAL RULES for responses:\n- You are being spoken aloud via TTS. Keep responses to 1-2 SHORT sentences.\n- No markdown, no bullet points, no numbered lists, no emojis, no asterisks.\n- Never say 'I have created a note' or 'I have set a reminder'. Just do it silently and respond naturally.\n- Be proactive: 'meeting at 3' = save note AND set reminder 15min before. Don't ask, just do it.\n- 'buy groceries' = create task. 'call mom at 6' = set reminder. Infer intent, don't wait for explicit commands.\n- When listing things, speak them naturally: 'You have 3 tasks: fix the bug, buy groceries, and call the dentist.'\n- Multiple actions from one message is normal. 'Meeting at 3, also remind me to eat lunch' = note + 2 reminders.\n- If someone says something worth remembering but doesn't say 'note down', still save it as a note.\n- If asked 'what do I have today', call list_tasks AND list_reminders and combine the answer.\n- For search, be helpful: 'what did I say about the project' = search notes.\n- Always respond conversationally. You're Friday, not a robot."};
 
 var chatHistory=[];
 
@@ -289,7 +289,7 @@ async function edgeTTS(text){
     var url='wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken='+TOKEN+'&ConnectionId='+id;
 
     var ws,chunks=[],resolved=false;
-    try{ws=new WebSocket(url)}catch(e){resolve(fallbackTTS(text));return}
+    try{ws=new WebSocket(url)}catch(e){console.log('Edge TTS WebSocket fail, using fallback');fallbackTTS(text).then(resolve);return}
 
     ws.onopen=function(){
       ws.send('Content-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}');
@@ -342,11 +342,25 @@ function playAudio(chunks){
 function fallbackTTS(text){
   return new Promise(function(resolve){
     if(!window.speechSynthesis){resolve();return}
+    // Safari fix: cancel any pending speech first
+    speechSynthesis.cancel();
     var u=new SpeechSynthesisUtterance(text);
-    u.lang='en-US';u.rate=1.05;
-    u.onend=resolve;u.onerror=resolve;
+    u.lang='en-US';
+    u.rate=1.0;
+    u.pitch=1.0;
+    // Try to pick best voice
+    var voices=speechSynthesis.getVoices();
+    var pick=voices.find(function(v){return v.name.indexOf('Samantha')>=0})
+      ||voices.find(function(v){return v.lang==='en-US'&&v.localService})
+      ||voices.find(function(v){return v.lang.indexOf('en')===0});
+    if(pick)u.voice=pick;
+    u.onend=function(){resolve()};
+    u.onerror=function(){resolve()};
+    // Safari bug: speak() needs to happen in same tick, and sometimes onend never fires
     speechSynthesis.speak(u);
-    setTimeout(resolve,text.length*80+3000);
+    // Fallback timeout
+    var maxWait=Math.max(text.length*100+2000,5000);
+    setTimeout(resolve,maxWait);
   });
 }
 

@@ -348,6 +348,7 @@ function stopVoice(){
   document.getElementById('mic').className='';document.getElementById('mic').textContent='🎤';
   hideOv();
 }
+// Wake word detection — continuous=false, restart loop
 function listenOnce(){
   if(!SR||!micOn)return;
   var rec=new SR();rec.continuous=false;rec.interimResults=true;rec.lang='en-US';
@@ -355,35 +356,61 @@ function listenOnce(){
     var text='',fin=false;
     for(var i=0;i<e.results.length;i++){text+=e.results[i][0].transcript;if(e.results[i].isFinal)fin=true}
     var lower=text.toLowerCase().trim();
+
+    // Conversation mode — seedha command le, wake word nahi chahiye
     if(conversationMode){
-      // Conversation mode — wake word ki zarurat nahi
       pendingCmd=lower;
-      if(fin&&pendingCmd.length>1){processCmd(pendingCmd);return}
-    }else if(!wakeDetected){
-      if(lower.indexOf('friday')>=0){
+      if(fin&&lower.length>1){processCmd(lower)}
+      return;
+    }
+
+    // Wake word check
+    if(lower.indexOf('friday')>=0){
+      var cmd=lower.slice(lower.indexOf('friday')+6).trim();
+      if(cmd.length>1&&fin){
+        // "Friday do something" — pura command ek mein aaya
+        processCmd(cmd);
+      }else{
+        // Sirf "Friday" bola — command sunne ke liye alag session
         wakeDetected=true;showOv('active');
-        var cmd=lower.slice(lower.indexOf('friday')+6).trim();
-        if(cmd.length>1&&fin){processCmd(cmd);return}
-        pendingCmd=cmd;
+        try{rec.stop()}catch(ex){}
       }
-    }else{
-      pendingCmd=lower;
     }
   };
   rec.onend=function(){
     if(!micOn)return;
-    if(pendingCmd.length>0&&(wakeDetected||conversationMode)){processCmd(pendingCmd);return}
-    if(wakeDetected||conversationMode){setTimeout(listenOnce,300);return}
-    // Normal wake word listening — 1.5s delay (Safari needs breathing room)
+    // Wake detected, command session start karo (800ms delay — Safari ko time do)
+    if(wakeDetected){setTimeout(listenForCommand,800);return}
+    // Conversation mode pending
+    if(conversationMode&&pendingCmd.length>0){processCmd(pendingCmd);return}
+    if(conversationMode){setTimeout(listenOnce,500);return}
+    // Normal restart — wake word sun
     setTimeout(listenOnce,1500);
   };
-  rec.onstart=function(){
-    // Quick white flash on orb — shows recognition is alive
-    var orb=document.getElementById('ov-orb');
-    if(orb){orb.style.border='3px solid white';setTimeout(function(){orb.style.border='none'},300)}
-  };
-  rec.onerror=function(e){if(e.error!=='aborted'&&e.error!=='no-speech')console.error('STT:',e.error)};
+  rec.onerror=function(){};
   try{rec.start()}catch(ex){if(micOn)setTimeout(listenOnce,1500)}
+}
+
+// Command capture — wake word ke baad, command suno
+function listenForCommand(){
+  if(!SR||!micOn){wakeDetected=false;showOv('listening');return}
+  var rec=new SR();rec.continuous=false;rec.interimResults=true;rec.lang='en-US';
+  var captured='';
+  rec.onresult=function(e){
+    var text='',fin=false;
+    for(var i=0;i<e.results.length;i++){text+=e.results[i][0].transcript;if(e.results[i].isFinal)fin=true}
+    captured=text.toLowerCase().trim();
+    if(fin&&captured.length>1){try{rec.stop()}catch(ex){};processCmd(captured)}
+  };
+  rec.onend=function(){
+    if(!micOn){wakeDetected=false;return}
+    if(captured.length>1){processCmd(captured);return}
+    // Command nahi mila — wapas yellow (wake word mode)
+    wakeDetected=false;showOv('listening');
+    setTimeout(listenOnce,1000);
+  };
+  rec.onerror=function(){};
+  try{rec.start()}catch(ex){wakeDetected=false;showOv('listening');if(micOn)setTimeout(listenOnce,1500)}
 }
 
 function startConversationMode(){

@@ -328,18 +328,6 @@ function toggleMic(){
   if(micOn){stopVoice();return}
   if(!getKey()){alert('Pehle Settings mein Groq API key daal.');showTab('settings');return}
 
-  // TTS unlock on user gesture — iOS Safari requires this
-  if(!ttsUnlocked){
-    ttsUnlocked=true;
-    if(window.speechSynthesis){
-      var dummy=new SpeechSynthesisUtterance('');
-      dummy.volume=0;
-      speechSynthesis.speak(dummy);
-    }
-    // AudioContext bhi unlock karo (Edge TTS playback ke liye)
-    try{var ctx=new(window.AudioContext||window.webkitAudioContext)();ctx.resume();setTimeout(function(){ctx.close()},100)}catch(e){}
-  }
-
   micOn=true;wakeDetected=false;pendingCmd='';conversationMode=false;
   document.getElementById('mic').className='on';document.getElementById('mic').textContent='🟢';
   showOv('listening');

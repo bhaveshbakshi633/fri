@@ -568,6 +568,14 @@ function parseTime(t){
 // ─── Auto-set key from URL hash ───
 (function(){var h=location.hash;if(h.indexOf('#key=')===0){var k=h.slice(5);setKey(k);location.hash='';location.reload()}})();
 
+// ─── Visibility — phone lock/tab switch pe mic band karo ───
+document.addEventListener('visibilitychange',function(){
+  if(document.hidden&&micOn){
+    L('Page hidden — stopping mic','#f66');
+    stopVoice();
+  }
+});
+
 // ─── Init ───
 render();
 </script>

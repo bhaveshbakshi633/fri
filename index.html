@@ -140,6 +140,8 @@ db.version(1).stores({notes:'++id,createdAt',tasks:'++id,status,createdAt',remin
 var CFG_DEFAULTS={
   // API
   groq_key:'',
+  gateway_url:'https://gateway-one-sable.vercel.app',
+  gateway_passphrase:'',
   // STT
   stt_lang:'en-US',
   stt_wake_word:'friday',
@@ -226,7 +228,9 @@ function renderSettings(){
 
   // ─── API ───
   sec('API');
-  row('Groq API Key','LLM inference ke liye. console.groq.com se free mein bana.',inp('groq_key','password','gsk_...'));
+  row('Groq API Key','Direct Groq calls ke liye. Gateway set hai toh optional.',inp('groq_key','password','gsk_...'));
+  row('Gateway URL','Friday Gateway URL. Chat + TTS server-side hoga.',inp('gateway_url','url','https://gateway-one-sable.vercel.app'));
+  row('Passphrase','Gateway auth. 4+ chars. Same passphrase = same data across devices.',inp('gateway_passphrase','password','your secret phrase'));
   end();
 
   // ─── STT (Speech-to-Text) ───
@@ -269,10 +273,11 @@ function renderSettings(){
   // ─── Info ───
   sec('Stack Info');
   h+='<div class="sr"><span>STT</span><span class="sv">Web Speech API (free, on-device)</span></div>';
-  h+='<div class="sr"><span>LLM</span><span class="sv">Groq Cloud (free 1000 req/day)</span></div>';
-  h+='<div class="sr"><span>TTS</span><span class="sv">Edge TTS via Vercel (free)</span></div>';
-  h+='<div class="sr"><span>Tools</span><span class="sv">Groq function calling</span></div>';
+  h+='<div class="sr"><span>LLM</span><span class="sv">'+(C('gateway_url')&&C('gateway_passphrase')?'Gateway (multi-provider failover)':'Groq Cloud (free 1000 req/day)')+'</span></div>';
+  h+='<div class="sr"><span>TTS</span><span class="sv">Edge TTS via Gateway (free)</span></div>';
+  h+='<div class="sr"><span>Tools</span><span class="sv">'+(C('gateway_url')&&C('gateway_passphrase')?'Server-side execution':'Groq function calling')+'</span></div>';
   h+='<div class="sr"><span>Storage</span><span class="sv">IndexedDB (on-device)</span></div>';
+  h+='<div class="sr"><span>Gateway</span><span class="sv">'+(C('gateway_url')||'Not set')+'</span></div>';
   end();
 
   // ─── Commands ───
@@ -319,9 +324,50 @@ var SYSTEM_MSG={role:'system',content:"You are Friday, Bhavesh's personal AI ass
 
 var chatHistory=[];
 
+// Gateway chat — server-side LLM + tool execution
+async function callGateway(userMsg){
+  var gw=C('gateway_url');
+  var pp=C('gateway_passphrase');
+  if(!gw||!pp)throw new Error('Gateway not configured');
+
+  var res=await fetch(gw.replace(/\/$/,'')+'/api/chat',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({message:userMsg,passphrase:pp,history:chatHistory.slice(-20)})
+  });
+  if(!res.ok){var e=await res.text();throw new Error('Gateway '+res.status+': '+e)}
+  var data=await res.json();
+  if(data.error)throw new Error(data.error);
+
+  chatHistory.push({role:'user',content:userMsg});
+  chatHistory.push({role:'assistant',content:data.reply});
+  var hmax=C('llm_history_max');if(chatHistory.length>hmax)chatHistory=chatHistory.slice(-(hmax-4));
+
+  // Execute tool actions locally too (gateway returns what it did)
+  if(data.actions&&data.actions.length){
+    for(var i=0;i<data.actions.length;i++){
+      try{await executeTool(data.actions[i].tool,data.actions[i].args)}catch(ex){console.warn('Local tool exec:',ex)}
+    }
+  }
+  return{reply:data.reply,toolCalls:data.actions||[],provider:data.provider};
+}
+
 async function callGroq(userMsg){
+  // Try gateway first if configured
+  var gw=C('gateway_url');
+  var pp=C('gateway_passphrase');
+  if(gw&&pp&&pp.length>=4){
+    try{
+      L('Using gateway: '+gw,'#6366f1');
+      return await callGateway(userMsg);
+    }catch(gwErr){
+      L('Gateway failed: '+gwErr.message+' — falling back to direct Groq','#f66');
+    }
+  }
+
+  // Direct Groq fallback
   var key=getKey();
-  if(!key)return{reply:"Groq API key set nahi hai. Settings mein ja aur key daal.",toolCalls:[]};
+  if(!key)return{reply:"API key ya gateway set nahi hai. Settings mein ja.",toolCalls:[]};
 
   chatHistory.push({role:'user',content:userMsg});
   var hmax=C('llm_history_max');if(chatHistory.length>hmax)chatHistory=chatHistory.slice(-(hmax-4));
@@ -405,7 +451,7 @@ async function executeTool(name,args){
 }
 
 // ─── Edge TTS via Vercel Proxy ───
-var TTS_PROXY='https://edge-tts-proxy-gamma.vercel.app/api/tts';
+var TTS_PROXY='https://gateway-one-sable.vercel.app/api/tts';
 
 async function edgeTTS(text){
   try{
@@ -501,7 +547,8 @@ var ttsUnlocked=false;
 
 function toggleMic(){
   if(micOn){stopVoice();return}
-  if(!getKey()){alert('Pehle Settings mein Groq API key daal.');showTab('settings');return}
+  var hasGateway=C('gateway_url')&&C('gateway_passphrase')&&C('gateway_passphrase').length>=4;
+  if(!getKey()&&!hasGateway){alert('Settings mein Groq API key ya Gateway + Passphrase set kar.');showTab('settings');return}
 
   // Pre-create audio element on user gesture — iOS won't block play() later
   if(!window._fridayAudio){

@@ -118,6 +118,7 @@ h1{font-size:26px;font-weight:700;margin-bottom:16px}
 // ─── Diagnostic Logger ───
 function L(msg,color){
   var el=document.getElementById('dlog');if(!el)return;
+  if(!C('ast_show_log')){el.style.display='none';return}else{el.style.display=''}
   var t=new Date().toLocaleTimeString();
   var d=document.createElement('div');
   d.style.color=color||'#888';
@@ -135,11 +136,42 @@ if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then
 var db=new Dexie('friday');
 db.version(1).stores({notes:'++id,createdAt',tasks:'++id,status,createdAt',reminders:'++id,remindAt,isSent'});
 
-// ─── Config ───
-function getKey(){return localStorage.getItem('friday_groq_key')||''}
-function setKey(k){localStorage.setItem('friday_groq_key',k)}
-function getVoice(){return localStorage.getItem('friday_voice')||'en-US-AriaNeural'}
-function setVoice(v){localStorage.setItem('friday_voice',v)}
+// ─── Config System ───
+var CFG_DEFAULTS={
+  // API
+  groq_key:'',
+  // STT
+  stt_lang:'en-US',
+  stt_wake_word:'friday',
+  stt_interim:true,
+  stt_wake_cmd_delay:800,     // ms between wake word and command session
+  stt_restart_delay:1500,     // ms between idle sessions
+  stt_convo_restart:500,      // ms restart in conversation mode
+  stt_convo_timeout:10000,    // ms conversation mode duration
+  stt_cmd_fallback_delay:1000,// ms if command not captured
+  // LLM
+  llm_model:'llama-3.3-70b-versatile',
+  llm_temperature:0.7,
+  llm_max_tokens:150,
+  llm_tool_choice:'auto',
+  llm_history_max:20,
+  llm_personality:'sharp',    // sharp, casual, formal, funny
+  // TTS
+  tts_voice:'en-US-AriaNeural',
+  tts_fallback_rate:1.0,
+  tts_timeout_per_char:150,   // ms per character timeout
+  tts_min_timeout:5000,       // ms minimum timeout
+  // Assistant
+  ast_haptic:true,            // vibrate on wake word
+  ast_auto_stop_lock:true,    // stop mic on phone lock
+  ast_show_log:true,          // show diagnostic log
+};
+function C(key){var v=localStorage.getItem('fri_'+key);if(v===null)return CFG_DEFAULTS[key];try{return JSON.parse(v)}catch(e){return v}}
+function CS(key,val){localStorage.setItem('fri_'+key,typeof val==='string'?val:JSON.stringify(val))}
+// Convenience
+function getKey(){return C('groq_key')}
+function setKey(k){CS('groq_key',k)}
+function getVoice(){return C('tts_voice')}
 
 // ─── Tabs ───
 var curTab='notes';
@@ -183,8 +215,83 @@ async function renderReminders(){
   document.getElementById('p-reminders').innerHTML=h;
 }
 function renderSettings(){
-  var k=getKey(),v=getVoice();
-  document.getElementById('p-settings').innerHTML='<h1>Settings</h1><p class="sl">API</p><div class="sg"><div class="sr"><span>Groq API Key</span><input id="sk" type="password" value="'+esc(k)+'" placeholder="gsk_..." onchange="setKey(this.value)"></div></div><p class="sl">Voice</p><div class="sg"><div class="sr"><span>TTS Voice</span><select id="sv" onchange="setVoice(this.value)" style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px;color:var(--text);font-size:13px"><option value="en-US-AriaNeural"'+(v==='en-US-AriaNeural'?' selected':'')+'>Aria (US Female)</option><option value="en-US-GuyNeural"'+(v==='en-US-GuyNeural'?' selected':'')+'>Guy (US Male)</option><option value="en-IN-NeerjaNeural"'+(v==='en-IN-NeerjaNeural'?' selected':'')+'>Neerja (IN Female)</option><option value="en-IN-PrabhatNeural"'+(v==='en-IN-PrabhatNeural'?' selected':'')+'>Prabhat (IN Male)</option></select></div></div><p class="sl">Stack</p><div class="sg"><div class="sr"><span>STT</span><span class="sv">Web Speech API (free)</span></div><div class="sr"><span>LLM</span><span class="sv">Groq Llama 3.3 70B</span></div><div class="sr"><span>TTS</span><span class="sv">Edge TTS (free)</span></div><div class="sr"><span>Tools</span><span class="sv">Groq function calling</span></div><div class="sr"><span>Storage</span><span class="sv">IndexedDB (on-device)</span></div></div><p class="sl">Commands</p><div class="sg"><div class="sr" style="flex-direction:column;align-items:flex-start;gap:6px;font-size:13px;color:var(--dim)"><div>📝 "Friday, note down meeting at 3pm"</div><div>✅ "Friday, add task buy groceries"</div><div>🔔 "Friday, remind me in 2 hours to call mom"</div><div>📋 "Friday, show my tasks"</div><div>🔍 "Friday, search notes about project"</div></div></div>';
+  var h='<h1>Settings</h1>';
+  function sec(title){h+='<p class="sl">'+title+'</p><div class="sg">'}
+  function end(){h+='</div>'}
+  function row(label,desc,input){h+='<div class="sr" style="flex-direction:column;align-items:stretch;gap:4px"><div style="display:flex;justify-content:space-between;align-items:center"><span>'+label+'</span>'+input+'</div><div style="font-size:11px;color:var(--muted)">'+desc+'</div></div>'}
+  function sel(key,opts){var cur=C(key);var s='<select onchange="CS(\''+key+'\',this.value)" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12px;max-width:55%">';opts.forEach(function(o){s+='<option value="'+o[0]+'"'+(cur==o[0]?' selected':'')+'>'+o[1]+'</option>'});return s+'</select>'}
+  function num(key,min,max,step){var cur=C(key);return'<input type="number" value="'+cur+'" min="'+min+'" max="'+max+'" step="'+(step||1)+'" onchange="CS(\''+key+'\',Number(this.value))" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12px;width:80px;text-align:right">'}
+  function tog(key){var cur=C(key);return'<label style="position:relative;width:44px;height:24px;display:inline-block"><input type="checkbox" '+(cur?'checked':'')+' onchange="CS(\''+key+'\',this.checked)" style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:'+(cur?'var(--green)':'var(--muted)')+';border-radius:12px;cursor:pointer;transition:.3s"></span><span style="position:absolute;top:2px;left:'+(cur?'22':'2')+'px;width:20px;height:20px;background:#fff;border-radius:50%;transition:.3s"></span></label>'}
+  function inp(key,type,placeholder){var cur=C(key);return'<input type="'+(type||'text')+'" value="'+esc(String(cur))+'" placeholder="'+(placeholder||'')+'" onchange="CS(\''+key+'\',this.value)" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12px;width:55%;text-align:right">'}
+
+  // ─── API ───
+  sec('API');
+  row('Groq API Key','LLM inference ke liye. console.groq.com se free mein bana.',inp('groq_key','password','gsk_...'));
+  end();
+
+  // ─── STT (Speech-to-Text) ───
+  sec('STT — Speech Recognition');
+  row('Language','Recognition language. en-US best for "Friday" detection. en-IN for Hindi-English mix.',sel('stt_lang',[['en-US','English (US)'],['en-IN','English (India)'],['en-GB','English (UK)'],['hi-IN','Hindi']]));
+  row('Wake Word','Trigger word to activate Friday. Case-insensitive. Say this before any command.',inp('stt_wake_word','text','friday'));
+  row('Interim Results','Show partial transcription while speaking. Enables real-time feedback.',tog('stt_interim'));
+  row('Wake → Command Delay','Milliseconds between wake word detection and command listening session. Safari needs 500ms+. Too low = session fails.',num('stt_wake_cmd_delay',200,3000,100));
+  row('Idle Restart Delay','Milliseconds between recognition sessions when waiting for wake word. Lower = more responsive but more battery drain.',num('stt_restart_delay',500,5000,100));
+  row('Conversation Restart','Milliseconds between sessions in conversation mode (after first response). Lower = faster follow-up.',num('stt_convo_restart',200,2000,100));
+  row('Conversation Timeout','How long (ms) Friday keeps listening without wake word after a response. 10000 = 10 seconds of free talk.',num('stt_convo_timeout',3000,30000,1000));
+  row('Command Fallback Delay','If command session fails to capture, wait this long before going back to wake word mode.',num('stt_cmd_fallback_delay',500,3000,100));
+  end();
+
+  // ─── LLM ───
+  sec('LLM — Language Model');
+  row('Model','Groq model for inference. 70B = smartest but slower. 8B = fastest but dumber.',sel('llm_model',[['llama-3.3-70b-versatile','Llama 3.3 70B (smartest)'],['llama-3.1-70b-versatile','Llama 3.1 70B'],['llama-3.1-8b-instant','Llama 3.1 8B (fastest)'],['llama3-70b-8192','Llama 3 70B'],['mixtral-8x7b-32768','Mixtral 8x7B'],['gemma2-9b-it','Gemma 2 9B']]));
+  row('Temperature','Creativity. 0 = deterministic/exact. 1 = creative/varied. 0.7 = balanced.',num('llm_temperature',0,1,0.1));
+  row('Max Tokens','Maximum response length. Voice responses should be short (100-200). Longer = slower.',num('llm_max_tokens',50,500,10));
+  row('Tool Choice','When to use tools (notes/tasks/reminders). Auto = LLM decides. Required = always use. None = never.',sel('llm_tool_choice',[['auto','Auto (LLM decides)'],['required','Required (always)'],['none','None (conversation only)']]));
+  row('History Length','Number of messages to keep in context. More = better memory but slower. 20 = ~10 exchanges.',num('llm_history_max',6,40,2));
+  row('Personality','Response style. Affects system prompt behavior.',sel('llm_personality',[['sharp','Sharp & Witty'],['casual','Casual & Friendly'],['formal','Formal & Professional'],['funny','Humorous & Playful'],['minimal','Minimal (1 word answers)']]));
+  end();
+
+  // ─── TTS ───
+  sec('TTS — Voice Output');
+  row('Voice','Edge TTS neural voice. Premium Microsoft voices, free.',sel('tts_voice',[['en-US-AriaNeural','Aria (US Female — natural)'],['en-US-JennyNeural','Jenny (US Female — warm)'],['en-US-GuyNeural','Guy (US Male — deep)'],['en-US-DavisNeural','Davis (US Male — calm)'],['en-US-JaneNeural','Jane (US Female — bright)'],['en-US-TonyNeural','Tony (US Male — casual)'],['en-IN-NeerjaNeural','Neerja (Indian Female)'],['en-IN-PrabhatNeural','Prabhat (Indian Male)'],['en-GB-SoniaNeural','Sonia (British Female)'],['en-GB-RyanNeural','Ryan (British Male)'],['en-AU-NatashaNeural','Natasha (Australian Female)']]));
+  row('Fallback TTS Rate','SpeechSynthesis speed if Edge TTS fails. 1.0 = normal. 1.2 = slightly fast.',num('tts_fallback_rate',0.5,2.0,0.1));
+  row('Timeout per Character','Max wait (ms) per character of response for audio playback. Prevents infinite hang.',num('tts_timeout_per_char',50,300,10));
+  row('Minimum Timeout','Floor timeout (ms) for very short responses.',num('tts_min_timeout',3000,15000,1000));
+  end();
+
+  // ─── Assistant ───
+  sec('Assistant — Behavior');
+  row('Haptic Feedback','Vibrate phone on wake word detection. Tactile confirmation.',tog('ast_haptic'));
+  row('Auto-stop on Lock','Stop mic when phone is locked or tab is hidden. Saves battery.',tog('ast_auto_stop_lock'));
+  row('Show Diagnostic Log','Show live event log in overlay. Useful for debugging.',tog('ast_show_log'));
+  end();
+
+  // ─── Info ───
+  sec('Stack Info');
+  h+='<div class="sr"><span>STT</span><span class="sv">Web Speech API (free, on-device)</span></div>';
+  h+='<div class="sr"><span>LLM</span><span class="sv">Groq Cloud (free 1000 req/day)</span></div>';
+  h+='<div class="sr"><span>TTS</span><span class="sv">Edge TTS via Vercel (free)</span></div>';
+  h+='<div class="sr"><span>Tools</span><span class="sv">Groq function calling</span></div>';
+  h+='<div class="sr"><span>Storage</span><span class="sv">IndexedDB (on-device)</span></div>';
+  end();
+
+  // ─── Commands ───
+  sec('Voice Commands');
+  h+='<div class="sr" style="flex-direction:column;align-items:flex-start;gap:6px;font-size:13px;color:var(--dim)">';
+  h+='<div>📝 "Friday, note down meeting at 3pm"</div>';
+  h+='<div>✅ "Friday, add task buy groceries high priority"</div>';
+  h+='<div>🔔 "Friday, remind me in 2 hours to call mom"</div>';
+  h+='<div>📋 "Friday, what do I have to do today?"</div>';
+  h+='<div>🔍 "Friday, search notes about the project"</div>';
+  h+='<div>💬 "Friday, I have a meeting at 3" (auto-note + reminder)</div>';
+  h+='<div>🗣️ After response, speak without "Friday" for 10s</div>';
+  h+='</div>';
+  end();
+
+  // ─── Reset ───
+  h+='<div style="padding:16px"><button onclick="if(confirm(\'Reset all settings?\')){Object.keys(CFG_DEFAULTS).forEach(function(k){localStorage.removeItem(\'fri_\'+k)});renderSettings()}" style="width:100%;padding:12px;background:var(--red);color:#fff;border:none;border-radius:12px;font-weight:600;cursor:pointer">Reset All Settings</button></div>';
+
+  document.getElementById('p-settings').innerHTML=h;
 }
 
 // ─── DB Actions ───
@@ -217,10 +324,10 @@ async function callGroq(userMsg){
   if(!key)return{reply:"Groq API key set nahi hai. Settings mein ja aur key daal.",toolCalls:[]};
 
   chatHistory.push({role:'user',content:userMsg});
-  if(chatHistory.length>20)chatHistory=chatHistory.slice(-16);
+  var hmax=C('llm_history_max');if(chatHistory.length>hmax)chatHistory=chatHistory.slice(-(hmax-4));
 
   var messages=[SYSTEM_MSG].concat(chatHistory);
-  var body={model:'llama-3.3-70b-versatile',messages:messages,tools:TOOLS,tool_choice:'auto',temperature:0.7,max_tokens:150};
+  var body={model:C('llm_model'),messages:messages,tools:TOOLS,tool_choice:C('llm_tool_choice'),temperature:C('llm_temperature'),max_tokens:C('llm_max_tokens')};
 
   try{
     var res=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify(body)});
@@ -242,7 +349,7 @@ async function callGroq(userMsg){
 
       // Second call — tool results ke saath final response lo
       var messages2=[SYSTEM_MSG].concat(chatHistory);
-      var body2={model:'llama-3.3-70b-versatile',messages:messages2,temperature:0.7,max_tokens:150};
+      var body2={model:C('llm_model'),messages:messages2,temperature:C('llm_temperature'),max_tokens:C('llm_max_tokens')};
       var res2=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify(body2)});
       var data2=await res2.json();
       var reply=data2.choices[0].message.content;
@@ -322,7 +429,7 @@ async function edgeTTS(text){
         fallbackTTS(text).then(resolve);
       });
       // Safety timeout
-      setTimeout(resolve,Math.max(text.length*150,5000));
+      setTimeout(resolve,Math.max(text.length*C('tts_timeout_per_char'),C('tts_min_timeout')));
     });
   }catch(e){
     console.error('Edge TTS fail:',e);
@@ -335,7 +442,7 @@ function fallbackTTS(text){
     if(!window.speechSynthesis){resolve();return}
     speechSynthesis.cancel();
     var u=new SpeechSynthesisUtterance(text);
-    u.lang='en-US';u.rate=1.0;
+    u.lang=C('stt_lang');u.rate=C('tts_fallback_rate');
     var voices=speechSynthesis.getVoices();
     var pick=voices.find(function(v){return v.name.indexOf('Samantha')>=0})
       ||voices.find(function(v){return v.lang==='en-US'&&v.localService})
@@ -418,7 +525,7 @@ function stopVoice(){
 // Wake word detection — continuous=false, restart loop
 function listenOnce(){
   if(!SR||!micOn){L('listenOnce skip: SR='+!!SR+' micOn='+micOn,'#f66');return}
-  var rec=new SR();rec.continuous=false;rec.interimResults=true;rec.lang='en-US';
+  var rec=new SR();rec.continuous=false;rec.interimResults=C('stt_interim');rec.lang=C('stt_lang');
   var dispatched=false;
   L('STT session starting...','#ff0');
   rec.onstart=function(){L('STT active — speak now','#0f0')};
@@ -435,12 +542,13 @@ function listenOnce(){
       return;
     }
 
-    if(lower.indexOf('friday')>=0){
-      var cmd=lower.slice(lower.indexOf('friday')+6).trim();
+    if(lower.indexOf(C('stt_wake_word'))>=0){
+      var cmd=lower.slice(lower.indexOf(C('stt_wake_word'))+C('stt_wake_word').length).trim();
       if(cmd.length>1&&fin){
         dispatched=true;L('WAKE+CMD: '+cmd,'#0f0');processCmd(cmd);
       }else{
         wakeDetected=true;showOv('active');
+        if(C('ast_haptic')&&navigator.vibrate)navigator.vibrate(50);
         L('WAKE WORD — waiting for command','#0f0');
         try{rec.stop()}catch(ex){}
       }
@@ -449,21 +557,21 @@ function listenOnce(){
   rec.onend=function(){
     L('STT ended dispatched='+dispatched+' wake='+wakeDetected+' convo='+conversationMode,'#888');
     if(dispatched||!micOn)return;
-    if(wakeDetected){L('Starting command session (800ms)','#ff0');setTimeout(listenForCommand,800);return}
+    if(wakeDetected){L('Starting command session (800ms)','#ff0');setTimeout(listenForCommand,C('stt_wake_cmd_delay'));return}
     if(conversationMode&&pendingCmd.length>0){dispatched=true;processCmd(pendingCmd);return}
-    if(conversationMode){setTimeout(listenOnce,500);return}
+    if(conversationMode){setTimeout(listenOnce,C('stt_convo_restart'));return}
     L('Restart wake listener (1.5s)','#888');
-    setTimeout(listenOnce,1500);
+    setTimeout(listenOnce,C('stt_restart_delay'));
   };
   rec.onerror=function(e){L('STT error: '+e.error,'#f66')};
-  try{rec.start()}catch(ex){L('STT start FAIL: '+ex.message,'#f00');if(micOn)setTimeout(listenOnce,1500)}
+  try{rec.start()}catch(ex){L('STT start FAIL: '+ex.message,'#f00');if(micOn)setTimeout(listenOnce,C('stt_restart_delay'))}
 }
 
 // Command capture — wake word ke baad
 function listenForCommand(){
   if(!SR||!micOn){L('cmdListen skip','#f66');wakeDetected=false;showOv('listening');return}
   L('CMD session starting...','#0f0');
-  var rec=new SR();rec.continuous=false;rec.interimResults=true;rec.lang='en-US';
+  var rec=new SR();rec.continuous=false;rec.interimResults=C('stt_interim');rec.lang=C('stt_lang');
   var captured='';
   var dispatched=false;
   rec.onstart=function(){L('CMD active — speak command','#0f0')};
@@ -481,10 +589,10 @@ function listenForCommand(){
     if(captured.length>1){dispatched=true;processCmd(captured);return}
     L('No command — back to wake word','#ff0');
     wakeDetected=false;showOv('listening');
-    setTimeout(listenOnce,1000);
+    setTimeout(listenOnce,C('stt_cmd_fallback_delay'));
   };
   rec.onerror=function(e){L('CMD error: '+e.error,'#f66')};
-  try{rec.start()}catch(ex){L('CMD start FAIL: '+ex.message,'#f00');wakeDetected=false;showOv('listening');if(micOn)setTimeout(listenOnce,1500)}
+  try{rec.start()}catch(ex){L('CMD start FAIL: '+ex.message,'#f00');wakeDetected=false;showOv('listening');if(micOn)setTimeout(listenOnce,C('stt_restart_delay'))}
 }
 
 function startConversationMode(){
@@ -495,7 +603,7 @@ function startConversationMode(){
   // 10 sec — uske baad wapas wake word mode
   convoTimer=setTimeout(function(){
     conversationMode=false;
-  },10000);
+  },C('stt_convo_timeout'));
 }
 
 // ─── Command Pipeline ───
@@ -533,7 +641,7 @@ async function processCmd(text){
     L('Resuming — conversation mode 10s','#ff0');
     startConversationMode();
     showOv('listening');
-    setTimeout(listenOnce,1500);
+    setTimeout(listenOnce,C('stt_restart_delay'));
   }else{
     L('micOn=false, not resuming','#f66');
   }
@@ -570,7 +678,7 @@ function parseTime(t){
 
 // ─── Visibility — phone lock/tab switch pe mic band karo ───
 document.addEventListener('visibilitychange',function(){
-  if(document.hidden&&micOn){
+  if(document.hidden&&micOn&&C('ast_auto_stop_lock')){
     L('Page hidden — stopping mic','#f66');
     stopVoice();
   }

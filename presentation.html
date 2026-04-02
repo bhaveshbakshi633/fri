@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Friday AI — Company Presentation</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css">
+<style>
+.reveal{font-family:-apple-system,system-ui,sans-serif}
+.reveal h1{font-size:2.5em;color:#6366f1}
+.reveal h2{font-size:1.8em;color:#818cf8}
+.reveal h3{font-size:1.3em;color:#a5b4fc}
+.reveal table{font-size:.55em;margin:0 auto}
+.reveal table th{background:#6366f1;color:#fff;padding:8px 12px}
+.reveal table td{padding:6px 12px;border-bottom:1px solid #333}
+.reveal .highlight{color:#34d399}
+.reveal .warn{color:#fbbf24}
+.reveal .danger{color:#f87171}
+.reveal .dim{color:#9ca3af;font-size:.7em}
+.reveal code{background:#1e1e2e;padding:2px 8px;border-radius:4px;font-size:.8em}
+.reveal .stat{font-size:3em;font-weight:700;color:#6366f1}
+.reveal .stat-label{font-size:.5em;color:#9ca3af}
+.reveal .cols{display:flex;gap:40px;text-align:left}
+.reveal .cols>div{flex:1}
+.reveal .architecture{font-family:monospace;font-size:.5em;line-height:1.6;text-align:left;background:#0d0d1a;padding:20px;border-radius:12px}
+.reveal ul{text-align:left}
+.reveal li{margin:8px 0;font-size:.8em}
+.reveal .emoji{font-size:1.5em}
+section[data-background-color="#0a0a1a"] h2{color:#f0f0f5}
+</style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- SLIDE 1: Title -->
+<section data-background-color="#0a0a1a">
+<h1>Friday</h1>
+<h3 style="color:#34d399">Your Personal Life Operating System</h3>
+<p class="dim">Company Presentation — April 2026</p>
+<p class="dim">Built by Bhavesh Bakshi</p>
+</section>
+
+<!-- SLIDE 2: Problem -->
+<section data-background-color="#0a0a1a">
+<h2>The Problem</h2>
+<br>
+<p style="font-size:1.2em">"Productivity tools have made us <span class="danger">less productive</span>."</p>
+<br>
+<ul>
+<li>10 apps for notes, tasks, reminders, calendar</li>
+<li>Context switching kills focus</li>
+<li>You manage the tools instead of tools managing you</li>
+<li>Nothing remembers YOU across sessions</li>
+</ul>
+</section>
+
+<!-- SLIDE 3: Vision -->
+<section data-background-color="#0a0a1a">
+<h2>The Vision</h2>
+<br>
+<p style="font-size:1.3em">Friday is <span class="highlight">one voice</span> that handles everything.</p>
+<br>
+<p>Not an app. Not a tool. A <strong>friend</strong> who:</p>
+<ul>
+<li>Remembers everything you tell it</li>
+<li>Manages your tasks, notes, reminders</li>
+<li>Works from any device</li>
+<li>Gets smarter over time</li>
+<li>Lets you live life a little more <span class="highlight">carefree</span></li>
+</ul>
+</section>
+
+<!-- SLIDE 4: Demo Flow -->
+<section data-background-color="#0a0a1a">
+<h2>How It Works</h2>
+<br>
+<p style="font-size:.9em">
+<span class="emoji">🎤</span> "Friday, I have a meeting with the hardware team at 3"<br><br>
+<span class="emoji">🧠</span> <span class="dim">LLM understands → calls create_note + set_reminder</span><br><br>
+<span class="emoji">🔊</span> "Got it. I'll remind you 15 minutes before."<br><br>
+<span class="emoji">📱</span> <span class="dim">Note saved, reminder set — synced to all devices</span>
+</p>
+</section>
+
+<!-- SLIDE 5: Architecture Overview -->
+<section data-background-color="#0a0a1a">
+<h2>Architecture</h2>
+<div class="architecture">
+┌─ iPhone / Browser (Client) ─────────────┐
+│  STT: Web Speech API (free, on-device)   │
+│  UI:  Single HTML file (no build step)   │
+│  DB:  PouchDB (offline-first)            │
+│  Sync: PouchDB ↔ CouchDB (live)         │
+└──────────┬───────────────────────────────┘
+           │ REST API
+┌──────────▼───────────────────────────────┐
+│  Gateway (Vercel Serverless — Python)    │
+│  /api/chat  → LLM (4-provider failover) │
+│  /api/tts   → Edge TTS (neural voice)   │
+│  /api/memory → Long-term facts           │
+└──────────┬───────────────────────────────┘
+           │
+┌──────────▼───────────────────────────────┐
+│  CouchDB (IBM Cloudant — free tier)      │
+│  Per-user databases, live sync           │
+└──────────────────────────────────────────┘
+</div>
+</section>
+
+<!-- SLIDE 6: Tech Stack -->
+<section data-background-color="#0a0a1a">
+<h2>Tech Stack</h2>
+<table>
+<tr><th>Layer</th><th>Technology</th><th>Cost</th></tr>
+<tr><td>STT</td><td>Web Speech API (browser built-in)</td><td class="highlight">Free forever</td></tr>
+<tr><td>LLM</td><td>Groq → Cerebras → Gemini → OpenRouter</td><td class="highlight">Free (130+ RPM)</td></tr>
+<tr><td>TTS</td><td>Edge TTS (Microsoft neural voices)</td><td class="highlight">Free forever</td></tr>
+<tr><td>Database</td><td>PouchDB + CouchDB (Cloudant)</td><td class="highlight">Free tier</td></tr>
+<tr><td>Gateway</td><td>Vercel Serverless (Python)</td><td class="highlight">Free tier</td></tr>
+<tr><td>Client</td><td>GitHub Pages (single HTML)</td><td class="highlight">Free forever</td></tr>
+</table>
+<br>
+<p class="stat">$0<span class="stat-label">/month total infrastructure cost</span></p>
+</section>
+
+<!-- SLIDE 7: LLM Failover -->
+<section data-background-color="#0a0a1a">
+<h2>Never Rate Limited</h2>
+<p class="dim">4-provider failover chain, all OpenAI-compatible</p>
+<br>
+<table>
+<tr><th>Priority</th><th>Provider</th><th>Model</th><th>RPM</th><th>Free Tier</th></tr>
+<tr><td>1</td><td>Groq</td><td>Llama 3.3 70B</td><td>30</td><td>14,400 RPD</td></tr>
+<tr><td>2</td><td>Cerebras</td><td>Llama 3.3 70B</td><td>30</td><td>1M tokens/day</td></tr>
+<tr><td>3</td><td>Google</td><td>Gemini Flash-Lite</td><td>15</td><td>1,000 RPD</td></tr>
+<tr><td>4</td><td>OpenRouter</td><td>Auto (free models)</td><td>20</td><td>50-1000 RPD</td></tr>
+</table>
+<br>
+<p><span class="stat" style="font-size:2em">130+</span> <span class="stat-label">combined RPM — rate limits impossible</span></p>
+</section>
+
+<!-- SLIDE 8: Tool Calling -->
+<section data-background-color="#0a0a1a">
+<h2>Tools — Friday's Hands</h2>
+<br>
+<div class="cols">
+<div>
+<h3>Actions</h3>
+<ul>
+<li><code>create_note</code> — save anything</li>
+<li><code>create_task</code> — with priority</li>
+<li><code>set_reminder</code> — natural time</li>
+<li><code>complete_task</code> — fuzzy match</li>
+<li><code>search_notes</code> — find info</li>
+</ul>
+</div>
+<div>
+<h3>Intelligence</h3>
+<ul>
+<li><code>remember_fact</code> — long-term memory</li>
+<li><code>recall_memory</code> — retrieve facts</li>
+<li><code>list_tasks</code> — what's pending</li>
+<li><code>list_reminders</code> — what's upcoming</li>
+</ul>
+</div>
+</div>
+<br>
+<p class="dim">LLM decides which tools to use — multiple per message</p>
+</section>
+
+<!-- SLIDE 9: Memory System -->
+<section data-background-color="#0a0a1a">
+<h2>Long-Term Memory</h2>
+<br>
+<p>Friday <span class="highlight">remembers</span> across sessions and devices.</p>
+<br>
+<ul>
+<li><strong>Automatic extraction</strong> — "I'm a robotics engineer" → saved as fact</li>
+<li><strong>Categories</strong> — personal, work, preferences, relationships, routines</li>
+<li><strong>Relevance scoring</strong> — 5 signals: confidence, recency, frequency, category, keywords</li>
+<li><strong>Deduplication</strong> — won't save "likes coffee" 10 times</li>
+<li><strong>Context injection</strong> — relevant memories loaded into every conversation</li>
+</ul>
+<br>
+<p class="dim">2000 token budget: 300 system + 500 memory + 800 history + 400 tools</p>
+</section>
+
+<!-- SLIDE 10: Multi-device Sync -->
+<section data-background-color="#0a0a1a">
+<h2>Any Device, Same Data</h2>
+<br>
+<div class="cols">
+<div>
+<h3>PouchDB (Client)</h3>
+<ul>
+<li>IndexedDB storage</li>
+<li>Works fully offline</li>
+<li>Instant local reads</li>
+</ul>
+</div>
+<div>
+<h3>CouchDB (Cloud)</h3>
+<ul>
+<li>Live bidirectional sync</li>
+<li>Conflict resolution built-in</li>
+<li>Per-user database isolation</li>
+</ul>
+</div>
+</div>
+<br>
+<p><strong>Same passphrase = same data</strong> on any device.<br>No email, no OAuth, no signup.</p>
+</section>
+
+<!-- SLIDE 11: Voice Pipeline -->
+<section data-background-color="#0a0a1a">
+<h2>Voice Pipeline</h2>
+<br>
+<table>
+<tr><th>Step</th><th>What</th><th>Latency</th></tr>
+<tr><td>1</td><td>Wake word "Friday" detected</td><td>~200ms</td></tr>
+<tr><td>2</td><td>Command captured (silence detection)</td><td>~750ms</td></tr>
+<tr><td>3</td><td>Gateway: LLM + tools</td><td>~500ms</td></tr>
+<tr><td>4</td><td>Edge TTS audio generated</td><td>~300ms</td></tr>
+<tr><td>5</td><td>Audio plays on phone</td><td>~100ms</td></tr>
+</table>
+<br>
+<p><span class="stat" style="font-size:2em">&lt;2s</span> <span class="stat-label">end-to-end perceived latency</span></p>
+</section>
+
+<!-- SLIDE 12: iOS Safari -->
+<section data-background-color="#0a0a1a">
+<h2>iOS Safari — Battle Tested</h2>
+<br>
+<p class="dim">Every gotcha discovered and solved:</p>
+<ul>
+<li><code>continuous:true</code> broken → restart loop pattern</li>
+<li>Audio autoplay blocked → pre-unlock on first gesture</li>
+<li>Edge TTS Origin check → Vercel Python proxy</li>
+<li>OPFS storage OOM → fetch→blob bypass</li>
+<li>Recognition dies after result → new instance per session</li>
+<li>Mic "ding" sound → 400ms initial discard</li>
+<li>Background kills audio → visibilitychange handler</li>
+</ul>
+</section>
+
+<!-- SLIDE 13: UI Design -->
+<section data-background-color="#0a0a1a">
+<h2>Design System</h2>
+<br>
+<div class="cols">
+<div>
+<h3>Orb States</h3>
+<ul>
+<li>🟡 Yellow — waiting for wake word</li>
+<li>🟢 Green — listening for command</li>
+<li>🟣 Purple — thinking (LLM)</li>
+<li>🔴 Red — speaking (TTS)</li>
+<li>Responds to mic volume</li>
+</ul>
+</div>
+<div>
+<h3>UI</h3>
+<ul>
+<li>3-layer dark theme depth</li>
+<li>Glassmorphism tab bar</li>
+<li>Apple-style animations</li>
+<li>44px min touch targets</li>
+<li>Safe area handling</li>
+</ul>
+</div>
+</div>
+</section>
+
+<!-- SLIDE 14: Security -->
+<section data-background-color="#0a0a1a">
+<h2>Security</h2>
+<br>
+<ul>
+<li><strong>API keys</strong> — server only, never in client</li>
+<li><strong>Passphrase</strong> — PBKDF2 600K iterations</li>
+<li><strong>Database</strong> — per-user isolation in CouchDB</li>
+<li><strong>XSS</strong> — DOMPurify on all rendered content</li>
+<li><strong>CORS</strong> — strict origin whitelist</li>
+<li><strong>CSP</strong> — Content Security Policy headers</li>
+<li><strong>Rate limiting</strong> — per user + per IP</li>
+</ul>
+<br>
+<p class="dim">20-item hardening checklist, threat model documented</p>
+</section>
+
+<!-- SLIDE 15: Personality -->
+<section data-background-color="#0a0a1a">
+<h2>Friday's Personality</h2>
+<br>
+<p style="font-size:.9em;text-align:left;max-width:700px;margin:0 auto">
+<span class="highlight">"Hey Friday, who are you?"</span><br>
+<span class="dim">→ "I'm Friday. Built by you, running on your phone. No cloud BS."</span><br><br>
+<span class="highlight">"I have a standup at 10 and need to buy milk"</span><br>
+<span class="dim">→ Silently creates note + reminder + task. "Got it. Standup at 10, milk on the list."</span><br><br>
+<span class="highlight">"What do I have today?"</span><br>
+<span class="dim">→ Checks tasks + reminders. "3 tasks pending. Standup at 10, dentist at 4."</span><br><br>
+<span class="highlight">"You're pretty smart"</span><br>
+<span class="dim">→ "Well, you built me. Credit where it's due."</span>
+</p>
+</section>
+
+<!-- SLIDE 16: Business Model -->
+<section data-background-color="#0a0a1a">
+<h2>Business Model</h2>
+<br>
+<div class="cols">
+<div>
+<h3>Free</h3>
+<ul>
+<li>30 interactions/day</li>
+<li>Single device</li>
+<li>7-day memory</li>
+<li>Basic voice</li>
+</ul>
+</div>
+<div>
+<h3 style="color:#34d399">Pro — $8/mo</h3>
+<ul>
+<li>Unlimited interactions</li>
+<li>Multi-device sync</li>
+<li>Unlimited memory</li>
+<li>Premium voices</li>
+<li>Priority LLM</li>
+</ul>
+</div>
+</div>
+<br>
+<p class="dim">92-96% margins — infrastructure costs near zero</p>
+</section>
+
+<!-- SLIDE 17: Revenue -->
+<section data-background-color="#0a0a1a">
+<h2>Revenue Projections</h2>
+<br>
+<table>
+<tr><th>Users</th><th>Pro Conversion</th><th>MRR</th><th>Infra Cost</th><th>Margin</th></tr>
+<tr><td>100</td><td>30%</td><td>$240</td><td>~$10</td><td>96%</td></tr>
+<tr><td>1,000</td><td>25%</td><td>$2,000</td><td>~$80</td><td>96%</td></tr>
+<tr><td>10,000</td><td>20%</td><td>$16,000</td><td>~$500</td><td>97%</td></tr>
+<tr><td>100,000</td><td>15%</td><td>$120,000</td><td>~$5,000</td><td>96%</td></tr>
+</table>
+</section>
+
+<!-- SLIDE 18: Roadmap -->
+<section data-background-color="#0a0a1a">
+<h2>Roadmap</h2>
+<br>
+<div style="text-align:left;max-width:700px;margin:0 auto">
+<h3 class="highlight">v1 — Now</h3>
+<p class="dim">Voice conversation, notes, tasks, reminders, memory, sync, personality</p>
+<br>
+<h3 class="warn">v2 — 3 months</h3>
+<p class="dim">Semantic memory (embeddings), habit detection, proactive suggestions, Hinglish support</p>
+<br>
+<h3 style="color:#f87171">v3 — 6 months</h3>
+<p class="dim">Calendar integration, email summarization, smart home, voice cloning, multimodal</p>
+<br>
+<h3 style="color:#c084fc">Moonshots — 1 year</h3>
+<p class="dim">Predictive assistance, digital twin, health tracking, financial assistant</p>
+</div>
+</section>
+
+<!-- SLIDE 19: Competitive Moat -->
+<section data-background-color="#0a0a1a">
+<h2>Why Can't Someone Clone This?</h2>
+<br>
+<ul>
+<li><strong>Memory architecture</strong> — months of conversations = unforkable context</li>
+<li><strong>LLM failover chain</strong> — 4 providers, circuit breakers, zero downtime</li>
+<li><strong>Personality lock-in</strong> — Friday knows YOU, a new app doesn't</li>
+<li><strong>Zero-burn cost</strong> — $0 infra means infinite runway</li>
+<li><strong>Offline-first sync</strong> — works without internet, syncs when available</li>
+<li><strong>iOS Safari expertise</strong> — 30+ gotchas solved, takes months to rediscover</li>
+</ul>
+</section>
+
+<!-- SLIDE 20: Team -->
+<section data-background-color="#0a0a1a">
+<h2>The Team</h2>
+<br>
+<table>
+<tr><th>Role</th><th>Name</th><th>Focus</th></tr>
+<tr><td>CEO</td><td>Vikram</td><td>Vision, business, go-to-market</td></tr>
+<tr><td>CTO</td><td>Arjun</td><td>Architecture, scalability, decisions</td></tr>
+<tr><td>VP R&D</td><td>Priya</td><td>AI intelligence, future capabilities</td></tr>
+<tr><td>Design</td><td>Zara</td><td>Visual identity, motion, accessibility</td></tr>
+<tr><td>Voice</td><td>Karan</td><td>Audio pipeline, iOS Safari, TTS/STT</td></tr>
+<tr><td>Security</td><td>Rahul</td><td>Threat model, auth, privacy</td></tr>
+<tr><td>DevRel</td><td>Maya</td><td>Documentation, API, community</td></tr>
+</table>
+<br>
+<p class="dim">+ Backend, Frontend, AI/ML, Infra, QA, Data teams</p>
+</section>
+
+<!-- SLIDE 21: What's Built -->
+<section data-background-color="#0a0a1a">
+<h2>What's Built (Today)</h2>
+<br>
+<div class="cols">
+<div>
+<h3>Code</h3>
+<ul>
+<li>Gateway: 5 API endpoints</li>
+<li>Client: 2431-line PWA</li>
+<li>Data: 2700-line PouchDB layer</li>
+<li>Intelligence: 6 modules</li>
+<li>Audio: Full pipeline</li>
+</ul>
+</div>
+<div>
+<h3>Docs</h3>
+<ul>
+<li>10 documentation files</li>
+<li>5 Architecture Decision Records</li>
+<li>150+ QA test cases</li>
+<li>Design system + tokens</li>
+<li>Security assessment</li>
+</ul>
+</div>
+</div>
+<br>
+<p><span class="stat" style="font-size:1.5em">15,000+</span> <span class="stat-label">lines of production code + docs</span></p>
+</section>
+
+<!-- SLIDE 22: Success Metrics -->
+<section data-background-color="#0a0a1a">
+<h2>Success Metrics</h2>
+<br>
+<table>
+<tr><th>Metric</th><th>Target</th></tr>
+<tr><td>Response latency</td><td class="highlight">&lt; 2 seconds</td></tr>
+<tr><td>DAU/MAU ratio</td><td class="highlight">&gt; 50%</td></tr>
+<tr><td>D7 retention</td><td class="highlight">&gt; 60%</td></tr>
+<tr><td>Free → Pro conversion</td><td class="highlight">&gt; 20%</td></tr>
+<tr><td>Uptime</td><td class="highlight">99.5%</td></tr>
+</table>
+<br>
+<p class="dim"><strong>The Forgetting Test:</strong> Do users forget they're talking to AI?</p>
+<p class="dim"><strong>The Panic Test:</strong> Would users feel lost if Friday went down?</p>
+</section>
+
+<!-- SLIDE 23: Call to Action -->
+<section data-background-color="#0a0a1a">
+<h1 style="font-size:3em">Friday</h1>
+<br>
+<p style="font-size:1.3em">Your life, a little more <span class="highlight">carefree</span>.</p>
+<br>
+<p class="dim" style="font-size:.8em">
+Voice first. Memory forever. Zero cost.<br>
+Works offline. Syncs everywhere. Gets smarter.<br><br>
+<code>bhaveshbakshi633.github.io/fri</code>
+</p>
+</section>
+
+</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>Reveal.initialize({hash:true,transition:'fade',transitionSpeed:'fast',controls:true,progress:true,center:true});</script>
+</body>
+</html>
